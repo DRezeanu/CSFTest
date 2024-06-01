@@ -1,0 +1,38 @@
+#version 330 core
+#define PI 3.14159265359
+
+in vec2 fragmentCoord;
+
+layout (location = 0) out vec4 fragmentColor;
+
+uniform float u_orientation;
+uniform float u_phase;
+uniform float u_contrast;
+uniform float u_spatial_frequency;
+
+void main()
+{
+
+    float x = fragmentCoord.x*cos(u_orientation*(PI/180.0)) + fragmentCoord.y*sin(u_orientation*(PI/180.0));
+
+    // Generate sine wave with given sf and contrast
+    float y = ((sin((x*(u_spatial_frequency*2*PI))+(u_phase*(PI/180.0)))*u_contrast)+1.0)/2.0;
+
+    // Linearize (inverse gamma transform)
+    y = pow(y, (1.0/2.2));
+
+    // Generate and convolve with gaussian
+    float gray = pow(0.5,(1.0/2.2));
+
+    // Set standard deviation relative to stim contrast
+    float standard_deviation = -0.083333*u_contrast + 0.258333;
+
+    float gauss = exp(-((pow(fragmentCoord.x-0.5, 2.0)+
+    pow(fragmentCoord.y-0.5, 2.0))/
+    (2.0*pow(standard_deviation, 2.0))));
+
+    y = y*gauss+gray*(1-gauss);
+
+	fragmentColor = vec4(y, y, y, 1.0);
+
+}

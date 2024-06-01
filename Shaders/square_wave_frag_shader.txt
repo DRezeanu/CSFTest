@@ -1,0 +1,39 @@
+#version 330 core
+#define PI 3.14159265359
+
+in vec2 fragmentCoord;
+
+layout (location = 0) out vec4 fragmentColor;
+
+uniform float u_orientation;
+uniform float u_standard_deviation;
+uniform float u_phase;
+uniform float u_contrast;
+uniform float u_spatial_frequency;
+
+void main()
+{
+    float x = fragmentCoord.x*cos(u_orientation*(PI/180.0)) + fragmentCoord.y*sin(u_orientation*(PI/180.0));
+
+    // Generate square wave with given sf, phase, and orientation (see line above)
+    float y = smoothstep(0.5, 0.55, (sin((x*(u_spatial_frequency*2*PI))+(u_phase*(PI/180.0)))+1.0)/2.0);
+
+    // Rescale for a given contrast
+    float a = 0.5-(u_contrast/2);
+    float b = 0.5+(u_contrast/2);
+    y = ((b-a)*y)+a;
+
+    // Linearize (inverse gamma transform)
+    y = pow(y, (1.0/2.2));
+
+    // Generate gaussian mask
+    float gray = pow(0.5,(1.0/2.2));
+    float gauss = exp(-((pow(fragmentCoord.x-0.5, 2.0)+
+    pow(fragmentCoord.y-0.5, 2.0))/
+    (2.0*pow(u_standard_deviation, 2.0))));
+
+    // Convolve with gaussian mask
+    y = y*gauss+gray*(1-gauss);
+
+	fragmentColor = vec4(y, y, y, 1.0);
+}
