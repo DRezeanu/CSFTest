@@ -1,3 +1,4 @@
+from PyQt6.QtWidgets import QApplication
 import numpy as np
 from PyQt6.QtGui import QGuiApplication
 from scipy import signal
@@ -7,6 +8,7 @@ from OpenGL import GL
 import ctypes
 import matplotlib.pyplot as plt
 from math import ceil
+import sys
 
 ### Screen to Visual Angle Conversion Functions ###
 
@@ -80,25 +82,148 @@ def getScreenDims(screen = 0, verbose = False):
     return pixel_ratio, pixel_size, mm_size
 
 def getNyquist(screen_width_in_mm, screen_width_in_pixels, subject_distance):
-    """
-    Use screen size and subject distance to determine the nyquist limit
-    i.e. the highest spatial frequency that can accurately be displayed
-    
-    Parameters:
-        screen_width_in_mm (float): physical screen width in millimeters
-        screen_width_in_pixels (int): screen width in pixels
-        subject_distance (int): subject distance in mm
-        
-    Returns:
-        nyquist (float): the maximum cycles per degree"""
 
-    mm_per_pixel = screen_width_in_mm/screen_width_in_pixels    # mm per pixel
-    degrees_per_mm = np.rad2deg(np.arctan(1/subject_distance))  # degrees per mm
-    pixels_per_degree = 1/(mm_per_pixel*degrees_per_mm)         # pixels per degree of visual angle
-    limit = 0.5                                                 # limit in cycles per pixel
-    nyquist = limit*pixels_per_degree                           # nyquist limit in cycles per degree
+    mm_per_pixel = screen_width_in_mm/screen_width_in_pixels
+    degrees_per_mm = np.rad2deg(np.arctan(1/subject_distance))
+    pixels_per_degree = 1/(mm_per_pixel*degrees_per_mm)
+    nyquist = 0.5*pixels_per_degree
 
     return nyquist
+
+
+### Numpy 10-bit stimulus creation functions (currently unused but maybe useful later) ###
+
+def make10BitGabor(size, sf = 50, contrast = 0.5, ori = 90, phase = 180, wave = 'sin'):
+    """Generate gabor pattern with given sf, contrast, orientation, phase, 
+    spatial frequency, and wave pattern as 10-bit unsigned integers packed into
+    a 32-bit integer per pixel.
+
+    red = 10 bits
+    green = 10 bits
+    blue = 10 bits
+    alpha = 2 bits
+
+    Parameters:
+        size (int): size of the grating (in pixels)
+        sf (float): spatial frequency (in pixels per cycle)
+        contrast (float): contrast from min to max value (in percent, [0-1])
+        ori (int): wave orientation (in degrees, [0-360]
+        phase (int): phase of the wave (in degrees, [0-360])
+        wave (string): type of wave ('sin' = sine wave, 'sqr' = square wave)
+
+    Returns:
+        numpy array: gabor stim of shape (size x size) as unsigned int
+    """
+
+    x, y = np.meshgrid(np.arange(size), np.arange(size))
+    gradient = np.sin(ori * np.pi / 180) * x - np.cos(ori * np.pi / 180) * y
+
+    if wave == 'sin':
+        grating = np.sin((2*np.pi * gradient) / sf + (phase * np.pi) / 180)
+    elif wave == 'sqr':
+        grating = signal.square((2 * np.pi * gradient) / sf + (phase * np.pi) / 180)
+    else:
+        raise NotImplementedError
+    
+    grating *= contrast
+    grating = (grating+1)/2
+
+    grating = grating*1023
+    grating = grating.astype(np.uint32)
+    alpha = np.ones((size, size), dtype = np.uint32)*1023
+
+    red = grating
+    green = grating << 10
+    blue = grating << 20
+    alpha = alpha << 30
+
+    rgb = red | green | blue | alpha
+
+    return rgb
+
+def make10BitTestRamp(size, start, stop):
+    """Generate linear gray test ramp of 10-bit unsigned 
+    integers packed into a 32-bit buffer.
+
+    red = 10 bits
+    green = 10 bits
+    blue = 10 bits
+    alpha = 2 bits
+    
+    Parameters:
+        size (int): size of test ramp in pixels
+        start (float): starting value between 0 and 1
+        stop (float): end value between 0 and 1
+        
+    Returns:
+        list or array: linear gray ramp of size (size x size)
+        ranging from (start) to (stop)
+    """
+    
+    gradient = np.linspace(start, stop, size)
+    gradient = np.expand_dims(gradient, axis = 1)
+    gradient = np.reshape(gradient, newshape = (1,size))
+    gradient = np.repeat(gradient, size, axis = 0)
+    
+    gradient = gradient*1023
+    gradient = gradient.astype(np.uint32)
+    alpha = np.ones((size, size), dtype = np.uint32)*1023
+
+    red = gradient
+    green = gradient << 10
+    blue = gradient << 20
+    alpha = alpha << 30
+
+    rgb = red | green | blue | alpha
+    
+    return rgb
+
+def gaussian_filter(size, sigma=0.15):
+    """Generate gaussian filter of size (size) with a standard
+    deviation of (sigma) percent."""
+ 
+    # Initializing value of x,y as grid of size (size x size)
+ 
+    x, y = np.meshgrid(np.linspace(0, size, size),
+                       np.linspace(0, size, size))
+    
+    # Convert sigma to standard deviation, assign center
+    # of image as the mean/peak, and precalculate the divisor
+    sd = sigma*size
+    center = size//2
+    divisor = 2.0*sd**2
+ 
+    # Calculate Gaussian filter
+    gauss = np.exp(-(((x-center)**2 + ((y-center)**2))/divisor))
+
+    return gauss
+
+def make8BitGabor(size, sf = 5, contrast = 0.5, ori = 90, phase = 90):
+    x, y = np.meshgrid(np.arange(size), np.arange(size))
+
+    ppc = size/sf
+    gradient = np.sin(ori * np.pi / 180) * x - np.cos(ori * np.pi / 180) * y
+
+    grating = np.sin((2*np.pi * gradient) / ppc + (phase * np.pi / 180))
+
+    grating *= contrast
+
+    grating = (grating+1)/2
+
+    gauss = gaussian_filter(size, sigma=0.19)
+    gray = 0.5
+
+    R = (grating*gauss) + (gray*(1-gauss))
+    G = R
+    B = R
+    RGB = np.dstack([R, G, B])
+    RGB = RGB**(1/2.2)
+
+    return RGB
+
+
+
+    
 
 #### CSF data plotting and best fit ####
 
@@ -115,8 +240,9 @@ def lsResiduals(x, sfs, data):
     Returns:
         list or array: vector of residuals for least squares fitting
     """
-    
-    return data - csfParabola(sfs, x[0], x[1], x[2], x[3])
+    parabola = csfParabola(sfs, x[0], x[1], x[2], x[3])
+
+    return np.log10(data) - np.log10(parabola)
 
 def csfParabola(spatial_frequencies, peak_sensitivity, peak_frequency, width_l, width_r):
     """Plot contrast sensitivity function as an asymetric parabolic function.
@@ -168,11 +294,11 @@ def csfBestFit(best_fit_xvals, data_xvals, data):
     peak_sensitivity_guess = 150
     peak_frequency_guess = 3.5
     width_l_guess = 5.0
-    width_r_guess = 15.0
+    width_r_guess = 20.0
     x0 = [peak_sensitivity_guess, peak_frequency_guess, width_l_guess, width_r_guess]
 
     # Use scipy least squares to calculate best fit parameters
-    ls_results = least_squares(lsResiduals, x0, args = (data_xvals, data), loss="arctan")
+    ls_results = least_squares(lsResiduals, x0, args = (data_xvals, data), method='lm')
 
     # Calculate best fit values using best fit parameters and a given set of x values
     bestFit = csfParabola(best_fit_xvals, ls_results.x[0], ls_results.x[1], ls_results.x[2], ls_results.x[3])
@@ -230,8 +356,7 @@ def genQuadWithTextureCoords(quad_width, quad_height, screen_width, screen_heigh
 
 def createShaderProgram(vertex_filename, fragment_filename):
     """Create vertex and fragment shaders, compile them, and link them
-    into a shader program, checking for compilation and linking errors 
-    along the way (since you can't debug a shader...).
+    into a shader program.
     
     Returns linked shader program."""
 
@@ -274,6 +399,8 @@ def createShaderProgram(vertex_filename, fragment_filename):
     return shader_program
 
 def genVAOandVBOWithTextureCoords(vertices):
+
+
     """Generate a Vertex Array Object and Vertex Buffer Object from
     a given set of vertices that include vertex position coordinates
     and texture coordinates"""

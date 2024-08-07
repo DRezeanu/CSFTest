@@ -12,27 +12,37 @@ uniform float u_spatial_frequency;
 
 void main()
 {
-
+    // generate x coordinate after accounting for orientation of the gaussian
     float x = fragmentCoord.x*cos(u_orientation*(PI/180.0)) + fragmentCoord.y*sin(u_orientation*(PI/180.0));
 
-    // Generate sine wave with given sf and contrast
+    // Generate sine wave with given sf, contrast, and phase
     float y = ((sin((x*(u_spatial_frequency*2*PI))+(u_phase*(PI/180.0)))*u_contrast)+1.0)/2.0;
 
-    // Linearize (inverse gamma transform)
-    y = pow(y, (1.0/2.2));
+    // Middle gray
+    float gray = 0.5;
 
-    // Generate and convolve with gaussian
-    float gray = pow(0.5,(1.0/2.2));
+    // calculate distance from center of the circle
+    float coord_to_center = distance(fragmentCoord.xy, vec2(0.5));
+
+    // compute smooth step gaussian using the distance from the center of the texture
+    float gauss = smoothstep(0.05, 0.50, coord_to_center);
+
+    // Linear interpolation using the smoothstep "gaussian"
+    y = mix(y, gray, gauss);
+
+    // Linearize (inverse gamma transform)
+    y = pow(y, (1/2.42));
+    
+	fragmentColor = vec4(y, y, y, 1.0);
+
+    // NO LONGER USING THE BELOW, SAVING JUST IN CASE
 
     // Set standard deviation relative to stim contrast
-    float standard_deviation = -0.083333*u_contrast + 0.258333;
+    // float standard_deviation = -0.091663*u_contrast + 0.25;
 
-    float gauss = exp(-((pow(fragmentCoord.x-0.5, 2.0)+
-    pow(fragmentCoord.y-0.5, 2.0))/
-    (2.0*pow(standard_deviation, 2.0))));
+    // float gauss = exp(-((pow(fragmentCoord.x-0.5, 2.0)+
+    // pow(fragmentCoord.y-0.5, 2.0))/
+    // (2.0*pow(standard_deviation, 2.0))));
 
-    y = y*gauss+gray*(1-gauss);
-
-	fragmentColor = vec4(y, y, y, 1.0);
 
 }
