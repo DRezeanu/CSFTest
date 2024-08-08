@@ -286,19 +286,16 @@ def csfBestFit(best_fit_xvals, data_xvals, data):
         bestFit (list or array): y values of best fit line
     """
     # Generate best guess for parameters using the input data
-    
-    # peak_sensitivity_guess = np.max(data)
-    # max_idx = np.where(data==np.max(data))[0][0]
-    # peak_frequency_guess = data_xvals[max_idx]
 
     peak_sensitivity_guess = 150
     peak_frequency_guess = 3.5
     width_l_guess = 5.0
     width_r_guess = 20.0
     x0 = [peak_sensitivity_guess, peak_frequency_guess, width_l_guess, width_r_guess]
+    ls_bounds = [[5, 0.1, 1.2, 1.2], [500, 32, 500.0, 500.0]]
 
     # Use scipy least squares to calculate best fit parameters
-    ls_results = least_squares(lsResiduals, x0, args = (data_xvals, data), method='lm')
+    ls_results = least_squares(lsResiduals, x0, args = (data_xvals, data), method='trf', verbose=False, bounds=ls_bounds)
 
     # Calculate best fit values using best fit parameters and a given set of x values
     bestFit = csfParabola(best_fit_xvals, ls_results.x[0], ls_results.x[1], ls_results.x[2], ls_results.x[3])
